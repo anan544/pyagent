@@ -1,0 +1,13 @@
+=== dir E:	hepython\super_study (rc=1) ===
+stdout: 
+stderr: 系统找不到指定的文件。
+
+=== echo hello (rc=0) ===
+stdout: hello
+
+=== whoami (rc=0) ===
+stdout: 瀹�
+
+=== dir E:	hepython\super_study\super_register (rc=1) ===
+stdout: 
+stderr: 系统找不到指定的路径。

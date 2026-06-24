@@ -1,0 +1,40 @@
+{# PEVR Verify 阶段模板 — 验收标准对照 #}
+# 验收检查
+
+## 验收标准（原文，不可修改）
+{{ acceptance_criteria }}
+
+## 原始计划
+{{ plan.content }}
+
+## 执行产出
+{% if working_memory.artifacts %}
+{% for key, value in working_memory.artifacts.items() %}
+### {{ key }}
+```
+{{ value[:3000] }}
+```
+{% endfor %}
+{% endif %}
+
+## 步骤执行记录
+{% if working_memory.step_results %}
+{% for sr in working_memory.step_results %}
+- [{{ sr.status }}] {{ sr.step }}
+  {{ sr.result[:500] }}
+{% endfor %}
+{% endif %}
+
+---
+
+请逐条对照验收标准，判断是否全部通过。
+输出格式：
+```json
+{
+  "passed": true/false,
+  "results": [
+    {"criterion": "...", "passed": true/false, "evidence": "..."}
+  ],
+  "summary": "..."
+}
+```

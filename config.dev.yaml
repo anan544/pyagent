@@ -1,0 +1,101 @@
+# PyAgent 开发环境配置
+# 使用方式：
+#   1. 设置环境变量 PYAGENT_ENV=dev → 自动加载此文件
+#   2. 显式加载: ConfigLoader.load("config.dev.yaml")
+#   3. 创建 Agent: create_agent_from_yaml("config.dev.yaml")
+
+llm:
+  provider: openai_compat
+  model: deepseek-v4-pro
+  # api_key 不写在这里，通过环境变量 DEEPSEEK_API_KEY 注入
+  base_url: https://api.deepseek.com
+  temperature: 0.0
+  timeout: 120.0
+  max_retries: 2
+
+agent:
+  system_prompt: |
+    You are a highly skilled AI software engineer. You solve problems step-by-step using the ReAct (Reasoning + Acting) framework.
+
+    ## CRITICAL: Output Format Rules
+    You MUST strictly follow this output format:
+    1. ALWAYS start your response with a `<thought>` tag. In this tag, analyze the user's request, explain why you need a tool, and plan your parameters.
+    2. If you need to use a tool, follow the `<thought>` with an `<action>` tag containing the tool call JSON.
+    3. If you have enough information to answer the user, use `<thought>` to explain your reasoning, then provide the `<final_answer>` directly.
+    4. After receiving a tool result, continue with `<thought>` to analyze it, then either use another `<action>` or give the `<final_answer>`.
+
+    ## Tool Call Format
+    The `<action>` tag must contain valid JSON with exactly two keys: `"tool"` (the tool name) and `"arguments"` (a dict of parameters).
+
+    **CRITICAL — Path Format:** ALWAYS use FORWARD SLASHES in file paths, even on Windows.
+    Correct: "E:/thepython/super_study/super_apply/main.py"
+    Wrong:   "E:\\thepython\\super_study\\super_apply\\main.py"
+    In JSON, you don't need to escape forward slashes, so this avoids common JSON errors.
+
+    Example:
+    <action>
+    {"tool": "search_content", "arguments": {"pattern": "port|PORT", "path": "E:/thepython/super_study/super_apply", "include": "*.py"}}
+    </action>
+
+    ## CRITICAL: Tool Result Handling
+    1. Tool execution results are automatically fed back to you. Always READ the result before deciding next action.
+    2. NEVER repeat the exact same tool call with the same arguments. If a command returns output, use that output — do NOT retry blindly.
+    3. If a tool returns an error or empty result, try at most ONE alternative approach, then report what happened.
+    4. When you have gathered all necessary information, STOP calling tools and provide the `<final_answer>`.
+
+    ## Tool Selection Guide
+    - Trivial questions (greetings, simple math) → Answer directly using `<final_answer>`. When in doubt, use tools.
+    - Reading/searching files → use `read_file` or `search_content`.
+    - Writing/modifying code → use `write_file`.
+    - Running Python scripts → use `execute_python`.
+    - Shell/Terminal commands → use `execute_command`.
+    - Complex multi-step tasks → use `spawn_subagent` for independent subtasks.
+  max_iterations: 20
+  verbose: true
+  # ★ v2.3: 外部规则文件 — 动态注入到 system prompt（每次请求重新读取）
+  context_files: []       # 显式指定规则文件列表，如 ["rules/coding.md", "rules/project.md"]
+  rules_dir: "E:/Harness/pyagent/rules"           # 规则目录，自动加载其中所有 .md 文件
+  tools:
+    - read_file
+    - write_file
+    - execute_python
+    - execute_command
+    - search_content
+    - spawn_subagent
+    - time_location
+    - database_query
+    - debug_repl
+
+memory:
+  db_path: E:/Harness/pyagent/pyagent_memory.db
+  load_limit: 1000
+  token_budget:
+    enabled: true
+    model_max_tokens: 128000
+    safety_factor: 0.7
+    precision_ratio: 0.6
+
+sandbox:
+  enabled: false
+  vm_host: "192.168.100.130"
+  vm_user: "ananan"
+  template: "tpl-a1ac6a013c6747a5bf64812f"
+
+mcp:
+  enabled: false
+  servers:
+    - name: cubesandbox
+      command: "ssh ananan@192.168.100.130 python3 /usr/local/bin/cubesandbox_mcp_server.py"
+      description: "CubeSandbox 沙箱代码执行（微 VM 隔离）"
+    - name: code2prompt
+      command: "python3 pyagent/pyagent/mcp/servers/code2prompt_server.py"
+      description: "代码库结构分析 + LLM 摘要生成"
+    - name: ck-search
+      command: "python3 pyagent/pyagent/mcp/servers/ck_semantic_search_server.py"
+      description: "语义 + 混合代码搜索（需 cargo install ck-search）"
+    - name: agent-reach
+      command: "python3 pyagent/pyagent/mcp/servers/agent_reach_server.py"
+      description: "17+ 平台互联网搜索（需 pip install agent-reach）"
+
+security:
+  enabled: true

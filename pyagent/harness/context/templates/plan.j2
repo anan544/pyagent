@@ -1,0 +1,71 @@
+{# PEVR Plan 阶段模板 — 完整规范注入 + Few-shot 示例 #}
+# 任务规划
+
+## 系统指令
+{{ system.content }}
+
+{% if context_files %}
+## 项目规范（完整）
+{% for file in context_files %}
+### 来源：{{ file.source }}
+{{ file.content }}
+{% endfor %}
+{% endif %}
+
+## 任务描述
+{{ working_memory.content }}
+
+## 验收标准（原文）
+{{ acceptance_criteria }}
+
+{% if few_shot_examples %}
+## 输出示例（Few-shot 参考）
+以下示例展示了符合规范的 ExecutionPlan JSON 格式，请严格遵循相同的结构：
+{% for example in few_shot_examples %}
+### 示例 {{ loop.index }}: {{ example.label }}
+**输入**: {{ example.task }}
+**输出**:
+```json
+{{ example.output | tojson(indent=2) }}
+```
+{% endfor %}
+{% endif %}
+
+---
+
+## 输出要求
+
+请基于以上完整规范，将任务分解为结构化的执行计划。你必须输出合法 JSON，遵循以下 Schema：
+
+```json
+{
+  "steps": [
+    {
+      "id": 0,
+      "description": "步骤描述（具体、可执行）",
+      "action": "read | write | execute | review | ask",
+      "tool": "工具名或 null",
+      "params": {},
+      "expected_output": "本步骤完成后应产生的具体产出",
+      "acceptance_criteria": "可量化的验收条件（如：0 个语法错误、测试全部通过）",
+      "depends_on": [],
+      "risk_level": "low | medium | high"
+    }
+  ],
+  "dependencies": {},
+  "risk_level": "low | medium | high",
+  "estimated_total_steps": <实际步骤数量>,
+  "needs_clarification": [],
+  "plan_summary": "1-3 句话概括整个计划"
+}
+```
+
+### 关键规则
+
+1. **所有字段必填**：每个 Step 的 description、action、expected_output、acceptance_criteria 均不能为空。
+2. **action 限值**：仅允许 `read`、`write`、`execute`、`review`、`ask` 五种。
+3. **高危工具标记**：若步骤使用 `write_file`、`execute_python`、`execute_command`、`delete_file` 等高风险工具，必须标记 `risk_level: "high"`，并在其后安排 `action: "review"` 的确认步骤。
+4. **验收标准量化**：避免"差不多""应该可以""大概"等模糊词汇。使用具体数字（如"0 个错误""全部 84 个测试通过"）。
+5. **不确定则声明**：若任务中存在无法准确分解的模糊点，将其写入 `needs_clarification` 字段而非猜测填充。
+6. **步骤 ID 从 0 开始**，连续递增。`depends_on` 列出依赖的前置步骤 ID。
+7. **仅输出 JSON**：不要输出任何解释文字、Markdown 标题或其他前后缀。你的整个回复必须是上述 JSON。

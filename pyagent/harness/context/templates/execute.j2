@@ -1,0 +1,33 @@
+{# PEVR Execute 阶段模板 — 相关规范片段 + 当前步骤 #}
+## 当前任务步骤
+{{ plan.content }}
+
+{% if relevant_specs %}
+## 相关规范片段
+{% for spec in relevant_specs %}
+### {{ spec.source }}
+{{ spec.content }}
+{% endfor %}
+{% endif %}
+
+## 可用资源（Working Memory）
+{% if working_memory.artifacts %}
+{% for key, value in working_memory.artifacts.items() %}
+### {{ key }}
+```
+{{ value[:2000] }}
+```
+{% endfor %}
+{% else %}
+（暂无）
+{% endif %}
+
+{% if history.content %}
+## 近期执行历史
+{{ history.content }}
+{% endif %}
+
+---
+
+请执行当前步骤。使用工具读取文件、搜索代码或执行 Python 来完成任务。
+完成后明确报告步骤结果。

@@ -1,0 +1,20 @@
+# PyAgent 框架依赖
+
+# 核心依赖
+httpx>=0.27.0        # HTTP 客户端，访问 OpenAI 兼容 API
+aiosqlite>=0.20.0    # 异步 SQLite，长期记忆持久化
+
+# 驾驭工程（Harness）依赖
+pyyaml>=6.0          # YAML 配置文件解析
+pydantic>=2.0        # 配置 Schema 校验 + API 请求/响应模型
+jinja2>=3.1          # PEVR 上下文模板渲染
+tiktoken>=0.6        # 精确 Token 计数（上下文裁剪验证）
+
+# HTTP 服务（可选 — 仅 api/ 模块需要）
+fastapi>=0.110.0     # HTTP API 框架
+uvicorn>=0.27.0      # ASGI 服务器
+
+# 测试
+pytest>=8.0.0        # 测试框架
+pytest-asyncio>=0.23.0  # async 测试支持
+httpx>=0.27.0        # HTTP 客户端（测试用 — TestClient）

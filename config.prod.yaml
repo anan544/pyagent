@@ -1,0 +1,32 @@
+# PyAgent 生产环境配置
+# 使用方式：设置环境变量 PYAGENT_ENV=prod
+
+llm:
+  provider: openai_compat
+  model: deepseek-chat
+  base_url: https://api.deepseek.com/v1
+  temperature: 0.0
+  timeout: 120.0
+  max_retries: 2
+
+agent:
+  system_prompt: |
+    You are a helpful AI assistant with access to tools.
+    Use tools when needed to answer the user's question.
+    When you have enough information, provide a final answer without calling tools.
+  max_iterations: 15
+  verbose: false
+  tools:
+    - read_file
+    - write_file
+    - execute_python
+    - search_content
+
+memory:
+  db_path: /var/lib/pyagent/prod_memory.db
+  load_limit: 500
+  token_budget:
+    enabled: true
+    model_max_tokens: 128000
+    safety_factor: 0.6
+    precision_ratio: 0.5

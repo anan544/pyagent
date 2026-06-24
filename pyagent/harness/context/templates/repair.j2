@@ -1,0 +1,71 @@
+{# PEVR Repair 阶段模板 — 1.5.4 JSON 强制输出 #}
+# 修复任务
+
+## 失败原因摘要
+{{ failure_summary }}
+
+## 当前步骤（重试）
+{{ plan.content }}
+
+{% if observability_hints.content %}
+## 修复上下文
+{{ observability_hints.content }}
+{% endif %}
+
+## 相关工件
+{% if working_memory.artifacts %}
+{% for key, value in working_memory.artifacts.items() %}
+### {{ key }}
+```
+{{ value[:2000] }}
+```
+{% endfor %}
+{% endif %}
+
+{% if relevant_specs %}
+## 相关规范片段
+{% for spec in relevant_specs %}
+### {{ spec.source }}
+{{ spec.content }}
+{% endfor %}
+{% endif %}
+
+---
+
+上一次执行失败。请基于失败原因修复问题，完成当前步骤。
+
+**重要：不要重复之前导致失败的操作。**
+
+---
+
+## 输出格式（必须严格遵守）
+
+请**仅**输出以下 JSON，不要添加任何解释文字：
+
+```json
+{
+  "fixed": true,
+  "changes_made": "具体修改了什么（一句话，用于收敛检测）",
+  "output": "修复后的完整产出"
+}
+```
+
+### 字段说明
+- `fixed`: true 表示修复成功，false 表示仍需修复
+- `changes_made`: **必须**准确描述本轮实际做了什么修改。每轮必须不同，用于检测"原地打转"
+- `output`: 修复后的完整产出（代码、文件内容、命令输出等）
+
+### 正确示例
+```json
+{"fixed": true, "changes_made": "将文件读取路径从 test.py 改为 src/test.py 并更新了导入语句", "output": "文件已修改，路径正确..."}
+```
+
+```json
+{"fixed": true, "changes_made": "在 execute_python 命令前添加了 pip install requests", "output": "依赖已安装，代码执行成功..."}
+```
+
+### 错误示例（会导致 REPAIR_FAILED）
+- **缺少 changes_made 字段** → 拒绝，要求重新输出
+- **changes_made 太模糊**（如 "修复了问题"、"做了改动"）→ 拒绝，要求具体描述
+- **输出非 JSON 格式** → 尝试提取 JSON 块，提取失败则拒绝
+- **输出 JSON 前后附加解释文字** → 只提取 JSON 块，忽略其余

@@ -147,9 +147,10 @@ async def _stream_run(
     """
     queue: asyncio.Queue = asyncio.Queue(maxsize=256)
 
-    # 自定义 logger：将日志消息推送到 SSE 队列
+    # 自定义 logger：将日志消息推送到 SSE 队列 + 写文件
     class SSELogger:
         def __call__(self, msg: str):
+            logger.info(msg)  # ★ 同时写日志文件，方便排查
             try:
                 queue.put_nowait(msg)
             except asyncio.QueueFull:

@@ -85,7 +85,8 @@ async def run_agent(
     dynamic_ctx = _build_dynamic_context(request, run_request)
     agent.dynamic_context = dynamic_ctx
 
-    # ★ v2.5: 远程工具执行模式
+    # ★ v2.5: 远程工具执行模式 — 每次请求先重置再检查
+    agent.enable_remote_tools(False)
     remote_tools = run_request.context.get("remote_tools", False) if run_request.context else False
     if remote_tools:
         agent.enable_remote_tools(True)

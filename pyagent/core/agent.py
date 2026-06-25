@@ -184,7 +184,6 @@ class Agent:
         # v0.10.1: 新会话开始，重置安全状态
         self.reset_security_state()
         self._captured_tool_calls = []  # 重置工具调用记录
-        self._remote_tools = False      # ★ v2.5: 默认关闭远程模式，防止跨请求泄漏
 
         # 确保会话存在（CLI 直接调用无 API 层的 create_session）
         if session_id and self.memory:

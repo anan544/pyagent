@@ -14,7 +14,7 @@ import logging
 from datetime import datetime, timezone, timedelta
 from typing import Optional, AsyncGenerator
 
-from fastapi import APIRouter, Request, Query
+from fastapi import APIRouter, Request, Query, HTTPException
 from fastapi.responses import StreamingResponse
 
 from ..dependencies import get_agent_manager
@@ -85,6 +85,12 @@ async def run_agent(
     dynamic_ctx = _build_dynamic_context(request, run_request)
     agent.dynamic_context = dynamic_ctx
 
+    # ★ v2.5: 远程工具执行模式
+    remote_tools = run_request.context.get("remote_tools", False) if run_request.context else False
+    if remote_tools:
+        agent.enable_remote_tools(True)
+        logger.info("Tool Relay 模式已启用 — 工具将发给客户端执行")
+
     # ── 流式模式 ──────────────────────────────────
     if stream:
         return StreamingResponse(
@@ -124,6 +130,41 @@ async def run_agent(
         trace_id=trace_id,
         session_id=session_id,
     )
+
+
+@router.post("/run/{session_id}/tool-result")
+async def tool_result(
+    session_id: str,
+    tool_result: dict,
+    request: Request,
+):
+    """
+    ★ v2.5: Tool Relay — 客户端执行完工具后回传结果。
+
+    Body:
+        {"call_id": "call_1", "result": "工具输出内容..."}
+
+    此端点会唤醒暂停的 Agent 循环，使其继续推理。
+    """
+    trace_id = getattr(request.state, "trace_id", "unknown")
+    manager = get_agent_manager()
+    agent = manager.agent
+
+    if agent is None:
+        raise HTTPException(status_code=503, detail="Agent 未初始化")
+
+    call_id = tool_result.get("call_id", "")
+    result_content = tool_result.get("result", "")
+
+    try:
+        agent.inject_tool_result(call_id, result_content)
+        logger.info(
+            "[TOOL-RELAY] 注入结果: call_id=%s, 长度=%d",
+            call_id, len(result_content),
+        )
+        return {"status": "ok", "call_id": call_id}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 # ── SSE 流式生成器 ─────────────────────────────────
@@ -180,18 +221,36 @@ async def _stream_run(
             if manager:
                 manager.track_task(run_task)
 
-            sent_tc_count = 0  # ★ 已发送的工具调用数
-            sent_thought: str = ""  # ★ v2.2: 已发送的思考内容（追踪变化）
+            sent_tc_count = 0
+            sent_thought: str = ""
 
             # 消费日志队列 → SSE 事件
             while not run_task.done():
-                # ★ v2.2: 发送思考内容（<thought> 标签内容）
+                # ★ v2.2: 发送思考内容
                 current_thought = getattr(agent, 'current_thought', '') or ''
                 if current_thought and current_thought != sent_thought:
                     yield _sse("thought", json.dumps({
                         "content": current_thought,
                     }, ensure_ascii=False))
                     sent_thought = current_thought
+
+                # ★ v2.5: 检测远程工具请求 — 暂停 SSE 流等待客户端
+                pending = getattr(agent, 'pending_tool', None)
+                if pending is not None:
+                    yield _sse("tool_request", json.dumps({
+                        "id": pending["id"],
+                        "name": pending["name"],
+                        "arguments": pending["arguments"],
+                    }, ensure_ascii=False))
+                    # 找到对应的 Future 并等待
+                    _pt = agent._pending_tool
+                    if _pt is not None:
+                        _future = _pt[1]
+                        try:
+                            await _future  # 暂停，等待 API 端点注入结果
+                        except Exception:
+                            pass  # 错误由 agent 端处理
+                    continue
 
                 # ★ 轮询新的工具调用（结构化数据，发送给前端）
                 current_tc = agent.captured_tool_calls

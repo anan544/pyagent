@@ -27,6 +27,7 @@ ReAct（Reasoning + Acting）循环：
 
 import json
 import re
+import asyncio
 from typing import Optional, List
 from .config import AgentConfig
 from .message import (
@@ -92,6 +93,10 @@ class Agent:
         self._dynamic_context: str = ""     # ★ v2.1: 动态上下文（时间/位置等）
         self._current_thought: str = ""     # ★ v2.2: 当前思考内容（文本 ReAct 模式）
         self._tool_output_compressor = None  # ★ v2.4: 工具输出压缩器（懒加载）
+        # ★ v2.5: Tool Relay — 远程工具执行
+        self._remote_tools: bool = False
+        self._pending_tool: tuple | None = None  # (ToolCall, asyncio.Future)
+        self._pending_governance = None  # 安全治理（GovernanceWrapper 或 None）
 
     @property
     def workspace(self) -> str | None:
@@ -120,6 +125,34 @@ class Agent:
     def captured_tool_calls(self) -> list[dict]:
         """返回本轮 run() 中所有工具调用记录。"""
         return list(self._captured_tool_calls)
+
+    @property
+    def pending_tool(self) -> dict | None:
+        """★ v2.5: 远程模式下待执行的工具（SSE generator 读取）。"""
+        if self._pending_tool is None:
+            return None
+        tc, _future = self._pending_tool
+        return {
+            "id": tc.id,
+            "name": tc.function_name,
+            "arguments": tc.arguments,
+        }
+
+    def enable_remote_tools(self, enabled: bool = True):
+        """★ v2.5: 启用远程工具执行模式。工具不在服务器本地执行，而是发给客户端。"""
+        self._remote_tools = enabled
+
+    def inject_tool_result(self, call_id: str, result_content: str):
+        """★ v2.5: 注入远程工具执行结果，唤醒暂停的 Agent 循环。"""
+        if self._pending_tool is None:
+            raise RuntimeError("No pending tool to inject result for")
+        tc, future = self._pending_tool
+        if tc.id != call_id:
+            raise ValueError(
+                f"Tool call ID mismatch: expected {tc.id}, got {call_id}"
+            )
+        self._pending_tool = None
+        future.set_result(result_content)
 
     # ── 公开 API ──────────────────────────────────
 
@@ -477,7 +510,8 @@ class Agent:
 
         v0.10.0: 若配置了 governance，通过 GovernanceWrapper 执行安全前置检查。
         v2.0: 注入 workspace 为工具的 cwd，使文件/命令操作在用户项目目录执行。
-        v2.4: 工具输出压缩 — 执行结果在喂给 LLM 之前先过压缩器，减少 Token 消耗。
+        v2.4: 工具输出压缩 — 执行结果先过压缩器再喂给 LLM。
+        v2.5: 远程模式 — 暂停 Agent 循环，等待客户端执行并回传结果。
         """
         # ★ v2.0: 注入工作区路径为 cwd
         if self._workspace:
@@ -490,14 +524,40 @@ class Agent:
             "arguments": tool_call.arguments,
         })
 
-        # ── 安全治理路径（v0.10.0）──
+        # ★ v2.5: 远程工具执行 — 暂停等待客户端
+        if self._remote_tools:
+            self._log(
+                f"   [REMOTE] 等待客户端执行: {tool_call.function_name}"
+            )
+            future: asyncio.Future = asyncio.get_event_loop().create_future()
+            self._pending_tool = (tool_call, future)
+            try:
+                result_content = await future
+                self._log(
+                    f"   [REMOTE] 收到客户端结果: "
+                    f"{len(result_content)} 字符"
+                )
+                return ToolMessage(
+                    content=result_content,
+                    tool_call_id=tool_call.id,
+                    name=tool_call.function_name,
+                )
+            except Exception as e:
+                self._log(f"   [REMOTE] 执行失败: {e}")
+                return ToolMessage(
+                    content=f"Remote tool execution failed: {e}",
+                    tool_call_id=tool_call.id,
+                    name=tool_call.function_name,
+                )
+
+        # ── 本地：安全治理路径（v0.10.0）──
         if self._governance is not None:
             ctx = self._governance.get_active_context()
             result = await self._governance.execute_tool(
                 tool_call, self.tool_registry, ctx,
             )
         else:
-            # ── 原始路径（向后兼容）──
+            # ── 本地：原始路径（向后兼容）──
             try:
                 result = await self.tool_registry.execute(
                     name=tool_call.function_name,

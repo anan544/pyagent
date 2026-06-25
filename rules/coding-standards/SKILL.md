@@ -1,4 +1,5 @@
 ---
+name: coding-standards
 paths:
   - "**/*.py"
   - "**/*.ts"

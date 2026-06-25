@@ -1,5 +1,6 @@
 ---
-description: "项目上下文 — 全局规则，无 paths 和 keywords，始终加载"
+name: project-context
+description: "super_study 项目结构、端口、启动方式。当用户提到项目路径或服务时使用。"
 ---
 
 # 项目上下文

@@ -88,34 +88,61 @@ class RuleLoader:
         if self._rules_dir and self._rules_dir.is_dir():
             target_paths = _extract_paths(user_input, workspace)
 
+            # ★ 收集所有规则：旧格式 (*.md) + 新格式 (skill-dir/SKILL.md)
+            rule_files: list[tuple[Path, str, bool]] = []  # (path, name, is_skill_dir)
+
+            # 旧格式：rules/*.md
             for md_file in sorted(self._rules_dir.glob("*.md")):
+                rule_files.append((md_file, md_file.stem, False))
+
+            # ★ 新格式（Agent Skills）：rules/skill-name/SKILL.md
+            for skill_dir in sorted(self._rules_dir.glob("*/")):
+                skill_md = skill_dir / "SKILL.md"
+                if skill_md.is_file():
+                    rule_files.append((skill_md, skill_dir.name, True))
+
+            for rule_path, rule_name, is_skill in rule_files:
                 # 避免重复加载（已在 context_files 中）
-                if self._is_context_file(str(md_file)):
+                if self._is_context_file(str(rule_path)):
                     continue
 
-                raw = _read_text(md_file)
+                raw = _read_text(rule_path)
                 if raw is None:
                     continue
 
                 fm = _parse_frontmatter(raw)
                 rule_paths: list[str] = fm.get("paths") or []
                 rule_keywords: list[str] = fm.get("keywords") or []
+                skill_desc: str = fm.get("description", "")
 
                 has_paths = bool(rule_paths)
                 has_keywords = bool(rule_keywords)
 
+                # 格式化来源标签
+                if is_skill:
+                    source_label = f"Skill: {rule_name}"
+                else:
+                    source_label = str(rule_path)
+
                 # ── 全局规则：无 paths 且无 keywords → 始终加载 ──
                 if not has_paths and not has_keywords:
-                    parts.append(f"[来源: {md_file}]\n{raw}")
+                    if is_skill and skill_desc:
+                        parts.append(
+                            f"[{source_label}]\n"
+                            f"<!-- {skill_desc} -->\n{raw}"
+                        )
+                    else:
+                        parts.append(f"[{source_label}]\n{raw}")
                     continue
 
                 # ── 路径匹配：有 paths 且提取到目标路径 ──
                 if has_paths and target_paths:
                     matched = _match_any(target_paths, rule_paths)
                     if matched:
-                        parts.append(
-                            f"[来源: {md_file} (路径匹配: {matched})]\n{raw}"
-                        )
+                        tag = f"路径匹配: {matched}"
+                        if is_skill and skill_desc:
+                            tag += f" | {skill_desc}"
+                        parts.append(f"[{source_label} ({tag})]\n{raw}")
                         continue
 
                 # ── 关键词匹配：有 keywords 且在用户输入中找到 ──
@@ -126,9 +153,10 @@ class RuleLoader:
                     else:
                         tag = "关键词匹配"
                     kw = _match_keywords(user_input, rule_keywords)
-                    parts.append(
-                        f"[来源: {md_file} ({tag}: {kw})]\n{raw}"
-                    )
+                    tag_str = f"{tag}: {kw}"
+                    if is_skill and skill_desc:
+                        tag_str += f" | {skill_desc}"
+                    parts.append(f"[{source_label} ({tag_str})]\n{raw}")
                     continue
 
                 # ── 都不匹配 → 跳过（节省 Token）──

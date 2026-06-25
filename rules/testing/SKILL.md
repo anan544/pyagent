@@ -1,4 +1,5 @@
 ---
+name: testing
 paths:
   - "**/*.test.ts"
   - "**/*.test.tsx"

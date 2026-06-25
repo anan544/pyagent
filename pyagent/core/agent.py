@@ -521,34 +521,53 @@ class Agent:
     ) -> ToolMessage:
         """压缩工具执行结果，减少喂给 LLM 的 Token 量。
 
-        策略：
-            - 小于 2000 字符 → 原样返回（不值得压缩开销）
-            - 超过阈值 → ContentRouter 识别类型 → 对应压缩器
-            - 压缩后附带统计信息，让 LLM 知道内容被压缩过
+        双引擎混合压缩：
+            1. Headroom 优先 — Code (AST) + JSON (SmartCrusher) + Log
+            2. PyAgent 兜底 — 如果 Headroom 不可用，用自带的 ContextCompressor
+            - Kompress ML 不加载（2G 服务器省内存）
+            - 小于 2000 字符原样返回
         """
         content = result.content or ""
         if len(content) <= 2000:
             return result
 
+        # ── 引擎 1: Headroom ──
+        try:
+            import headroom
+            compressed_text = headroom.compress(content)
+            if isinstance(compressed_text, str) and len(compressed_text) < len(content):
+                saved_pct = f"{(1 - len(compressed_text) / len(content)) * 100:.0f}%"
+                new_content = (
+                    f"[工具输出已压缩 — 节省 {saved_pct}，"
+                    f"原文 {len(content)} → {len(compressed_text)} 字符]\n"
+                    f"{compressed_text}"
+                )
+                self._log(
+                    f"   [COMPRESS] {tool_name}: "
+                    f"{len(content)} → {len(compressed_text)} 字符 "
+                    f"(Headroom, 省 {saved_pct})"
+                )
+                return ToolMessage(
+                    content=new_content,
+                    tool_call_id=result.tool_call_id,
+                    name=result.name,
+                )
+        except Exception as e:
+            self._log(f"   [COMPRESS] Headroom 失败 ({tool_name}): {e}，降级 PyAgent")
+
+        # ── 引擎 2: PyAgent 兜底 ──
         compressor = self._get_tool_output_compressor()
         try:
             compressed = compressor.compress_sync(content)
             saved = compressed.savings
-            cache_ids = compressed.cache_ids
-
-            # 构建压缩后的消息
             new_content = (
-                f"[工具输出已压缩 — 节省 {saved} Token，原文 {len(content)} → {len(compressed.text)} 字符]\n"
+                f"[工具输出已压缩 — 节省 {saved} Token，"
+                f"原文 {len(content)} → {len(compressed.text)} 字符]\n"
                 f"{compressed.text}"
             )
-            if cache_ids:
-                new_content += (
-                    f"\n\n[原文缓存 ID: {', '.join(cache_ids)}]"
-                )
-
             self._log(
-                f"   [COMPRESS] {tool_name} 输出: "
-                f"{len(content)} → {len(compressed.text)} 字符 (节省 {saved})"
+                f"   [COMPRESS] {tool_name}: "
+                f"{len(content)} → {len(compressed.text)} 字符 (PyAgent, 节省 {saved})"
             )
             return ToolMessage(
                 content=new_content,
@@ -556,8 +575,8 @@ class Agent:
                 name=result.name,
             )
         except Exception as e:
-            self._log(f"   [COMPRESS] 压缩跳过 ({tool_name}): {e}")
-            return result  # 压缩失败 → 原样返回，不阻塞流程
+            self._log(f"   [COMPRESS] PyAgent 也失败 ({tool_name}): {e}，原样返回")
+            return result
 
     # ── 文本 ReAct 解析（v2.2）────────────────────
 

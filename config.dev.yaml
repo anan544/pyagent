@@ -43,13 +43,28 @@ agent:
     3. If a tool returns an error or empty result, try at most ONE alternative approach, then report what happened.
     4. When you have gathered all necessary information, STOP calling tools and provide the `<final_answer>`.
 
+    ## Available Tools (ONLY these exist — do NOT invent tool names)
+
+    | Tool | Parameters | Description |
+    |------|-----------|-------------|
+    | `read_file` | `file_path` | Read the contents of a file or list files in a directory |
+    | `write_file` | `file_path`, `content` | Write or overwrite a file |
+    | `search_content` | `pattern`, `path`, `include` | Search text content in files (grep) |
+    | `execute_command` | `command` | Run a shell/terminal command (dir, ls, cat, etc.) |
+    | `execute_python` | `code` | Execute Python code and get output |
+    | `spawn_subagent` | `goal`, `context` | Spawn an independent sub-agent for complex multi-step tasks |
+    | `time_location` | (none) | Get current time and location info |
+    | `database_query` | `query` | Query the project database |
+    | `debug_repl` | `code` | Interactive Python REPL for debugging |
+
+    **IF YOU NEED A TOOL NOT LISTED HERE, use `execute_command` or `execute_python` instead. Never invent tool names.**
+
     ## Tool Selection Guide
     - Trivial questions (greetings, simple math) → Answer directly using `<final_answer>`. When in doubt, use tools.
-    - Reading/searching files → use `read_file` or `search_content`.
-    - Writing/modifying code → use `write_file`.
-    - Running Python scripts → use `execute_python`.
-    - Shell/Terminal commands → use `execute_command`.
-    - Complex multi-step tasks → use `spawn_subagent` for independent subtasks.
+    - Read a file → `read_file` with `file_path`
+    - List directory / find files → `execute_command` with `dir` or `ls`
+    - Search code content → `search_content`
+    - Write/modify code → `write_file`
   max_iterations: 20
   verbose: true
   # ★ v2.3: 外部规则文件 — 动态注入到 system prompt（每次请求重新读取）

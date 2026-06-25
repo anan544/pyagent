@@ -184,6 +184,7 @@ class Agent:
         # v0.10.1: 新会话开始，重置安全状态
         self.reset_security_state()
         self._captured_tool_calls = []  # 重置工具调用记录
+        self._remote_tools = False      # ★ v2.5: 默认关闭远程模式，防止跨请求泄漏
 
         # 确保会话存在（CLI 直接调用无 API 层的 create_session）
         if session_id and self.memory:
@@ -526,6 +527,29 @@ class Agent:
 
         # ★ v2.5: 远程工具执行 — 暂停等待客户端
         if self._remote_tools:
+            # ★ 安全治理检查（不能绕过！）
+            if self._governance is not None:
+                ctx = self._governance.get_active_context()
+                try:
+                    governed = await self._governance.check_tool(
+                        tool_call, ctx,
+                    )
+                    if governed.blocked:
+                        self._log(
+                            f"   [REMOTE-BLOCK] {tool_call.function_name}: "
+                            f"{governed.reason}"
+                        )
+                        return ToolMessage(
+                            content=(
+                                f"Tool '{tool_call.function_name}' blocked by "
+                                f"security governance: {governed.reason}"
+                            ),
+                            tool_call_id=tool_call.id,
+                            name=tool_call.function_name,
+                        )
+                except AttributeError:
+                    pass  # governance 没有 check_tool 方法，跳过
+
             self._log(
                 f"   [REMOTE] 等待客户端执行: {tool_call.function_name}"
             )
